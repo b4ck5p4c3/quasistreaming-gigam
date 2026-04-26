@@ -114,7 +114,7 @@ async def transcribe(websocket) -> None:
                 offset -= len(buffer) - 10 * window_size
                 buffer = buffer[-10 * window_size :]
 
-        if started and current_time - started_time > 1:
+        if started and current_time - started_time > 0.5:
             stream = recognizer.create_stream()
             stream.accept_waveform(sample_rate, buffer)
             recognizer.decode_stream(stream)
