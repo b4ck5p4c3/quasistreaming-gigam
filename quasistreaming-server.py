@@ -8,12 +8,13 @@ import json
 import sherpa_onnx
 import numpy as np
 import array
-import time
 import soundfile as sf
 import uuid
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8080))
+
+ONNX_PROVIDER = os.environ.get("ONNX_PROVIDER", "cpu")
 
 INPUT_GAIN = float(os.environ.get("INPUT_GAIN", "1"))
 
@@ -38,15 +39,18 @@ base_sample_rate = 16000
 
 recognizer = None
 
+
 def create_recognizer() -> sherpa_onnx.OfflineRecognizer:
     return sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
         model=RECOGNIZER_MODEL_PATH,
         tokens=RECOGNIZER_TOKENS_PATH,
         debug=False,
+        provider=ONNX_PROVIDER
     )
 
+
 def create_vad():
-    config = sherpa_onnx.VadModelConfig()
+    config = sherpa_onnx.VadModelConfig(provider=ONNX_PROVIDER)
     config.silero_vad.model = VAD_MODEL_PATH
     config.silero_vad.threshold = VAD_THRESHOLD
     config.silero_vad.min_silence_duration = VAD_MIN_SILENCE_DURATION
@@ -59,12 +63,14 @@ def create_vad():
     vad = sherpa_onnx.VoiceActivityDetector(config, buffer_size_in_seconds=100)
     return (vad, window_size)
 
+
 def save_buffer(samples):
     if LOG_PATH is None:
         return
     path = f"{uuid.uuid4()}.wav"
     sf.write(os.path.join(LOG_PATH, path), samples, base_sample_rate)
     logging.info(f"saved samples to {path}")
+
 
 async def transcribe(websocket) -> None:
     global recognizer
@@ -162,12 +168,14 @@ async def transcribe(websocket) -> None:
 
     save_buffer(overall_buffer)
 
+
 async def _windows_cancel(stop_event: asyncio.Event) -> None:
     try:
         while True:
             await asyncio.sleep(3600)
     except KeyboardInterrupt:
         stop_event.set()
+
 
 async def main() -> None:
     global recognizer
