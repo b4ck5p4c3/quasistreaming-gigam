@@ -78,7 +78,7 @@ async def transcribe(websocket) -> None:
     config_message = json.loads(await websocket.recv())
     sample_rate = config_message['sample_rate']
     if sample_rate != base_sample_rate:
-        logging.warn(f"sample rate mismatch, expected {base_sample_rate}, got {sample_rate}")
+        logging.warning(f"sample rate mismatch, expected {base_sample_rate}, got {sample_rate}")
         await websocket.close()
         return
 

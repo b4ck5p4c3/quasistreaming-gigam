@@ -14,5 +14,5 @@ This repository includes two subsets of files:
 A simple client is provided in `client.py` to test the server:
 
 ``` shell
-python client.py input.wav http://localhost:8000
+python client.py input.wav ws://localhost:8080
 ```

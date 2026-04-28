@@ -1,6 +1,8 @@
 services:
   quasistreaming-gigam:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.cuda
     restart: unless-stopped
     ipc: host
     deploy:
