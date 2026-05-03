@@ -14,8 +14,8 @@ import uuid
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8080))
 
-RECOGNIZER_ONNX_PROVIDER = os.environ.get("ONNX_PROVIDER", "cpu")
-VAD_ONNX_PROVIDER = os.environ.get("ONNX_PROVIDER", "cpu")
+RECOGNIZER_ONNX_PROVIDER = os.environ.get("RECOGNIZER_ONNX_PROVIDER", "cpu")
+VAD_ONNX_PROVIDER = os.environ.get("VAD_ONNX_PROVIDER", "cpu")
 
 INPUT_GAIN = float(os.environ.get("INPUT_GAIN", "1"))
 
