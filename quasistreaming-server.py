@@ -14,7 +14,8 @@ import uuid
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8080))
 
-ONNX_PROVIDER = os.environ.get("ONNX_PROVIDER", "cpu")
+RECOGNIZER_ONNX_PROVIDER = os.environ.get("ONNX_PROVIDER", "cpu")
+VAD_ONNX_PROVIDER = os.environ.get("ONNX_PROVIDER", "cpu")
 
 INPUT_GAIN = float(os.environ.get("INPUT_GAIN", "1"))
 
@@ -45,12 +46,12 @@ def create_recognizer() -> sherpa_onnx.OfflineRecognizer:
         model=RECOGNIZER_MODEL_PATH,
         tokens=RECOGNIZER_TOKENS_PATH,
         debug=False,
-        provider=ONNX_PROVIDER
+        provider=RECOGNIZER_ONNX_PROVIDER
     )
 
 
-def create_vad():
-    config = sherpa_onnx.VadModelConfig(provider=ONNX_PROVIDER)
+def create_vad() -> sherpa_onnx.VoiceActivityDetector:
+    config = sherpa_onnx.VadModelConfig(provider=VAD_ONNX_PROVIDER)
     config.silero_vad.model = VAD_MODEL_PATH
     config.silero_vad.threshold = VAD_THRESHOLD
     config.silero_vad.min_silence_duration = VAD_MIN_SILENCE_DURATION
@@ -64,7 +65,7 @@ def create_vad():
     return (vad, window_size)
 
 
-def save_buffer(samples):
+def save_buffer(samples) -> None:
     if LOG_PATH is None:
         return
     path = f"{uuid.uuid4()}.wav"
