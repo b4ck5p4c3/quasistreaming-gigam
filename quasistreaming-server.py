@@ -42,6 +42,7 @@ recognizer = None
 
 
 def create_recognizer() -> sherpa_onnx.OfflineRecognizer:
+    logging.info(f"creating recognizer for provider '{RECOGNIZER_ONNX_PROVIDER}'")
     return sherpa_onnx.OfflineRecognizer.from_nemo_ctc(
         model=RECOGNIZER_MODEL_PATH,
         tokens=RECOGNIZER_TOKENS_PATH,
@@ -51,6 +52,7 @@ def create_recognizer() -> sherpa_onnx.OfflineRecognizer:
 
 
 def create_vad() -> sherpa_onnx.VoiceActivityDetector:
+    logging.info(f"creating vad for provider '{VAD_ONNX_PROVIDER}'")
     config = sherpa_onnx.VadModelConfig(provider=VAD_ONNX_PROVIDER)
     config.silero_vad.model = VAD_MODEL_PATH
     config.silero_vad.threshold = VAD_THRESHOLD
@@ -82,8 +84,6 @@ async def transcribe(websocket) -> None:
         logging.warning(f"sample rate mismatch, expected {base_sample_rate}, got {sample_rate}")
         await websocket.close()
         return
-
-    logging.info("creating vad")
 
     vad, window_size = create_vad()
     buffer = []
@@ -180,7 +180,6 @@ async def _windows_cancel(stop_event: asyncio.Event) -> None:
 
 async def main() -> None:
     global recognizer
-    logging.info("creating recognizer")
     recognizer = create_recognizer()
 
     stop = asyncio.Event()
