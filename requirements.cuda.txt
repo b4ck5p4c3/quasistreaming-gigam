@@ -1,3 +1,4 @@
 websockets
 numpy
 soundfile
+sentry-sdk
