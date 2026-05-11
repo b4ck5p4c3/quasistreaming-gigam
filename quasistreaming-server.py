@@ -10,6 +10,7 @@ import numpy as np
 import array
 import soundfile as sf
 import uuid
+import sentry_sdk
 
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8080))
@@ -27,6 +28,14 @@ VAD_THRESHOLD = float(os.environ.get("VAD_THRESHOLD", "0.3"))
 VAD_MIN_SILENCE_DURATION = float(os.environ.get("VAD_MIN_SILENCE_DURATION", "1"))
 VAD_MIN_SPEECH_DURATION = float(os.environ.get("VAD_MIN_SPEECH_DURATION", "0.25"))
 VAD_MAX_SPEECH_DURATION = float(os.environ.get("VAD_MAX_SPEECH_DURATION", "8"))
+
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "https://example@o0.ingest.sentry.io/0")
+
+sentry_sdk.init(
+    dsn=SENTRY_DSN,
+    traces_sample_rate=1,
+    default_integrations=False
+)
 
 LOG_PATH = os.environ.get("LOG_PATH")
 
@@ -75,100 +84,106 @@ def save_buffer(samples) -> None:
     logging.info(f"saved samples to {path}")
 
 
-async def transcribe(websocket) -> None:
-    global recognizer
+async def transcribe(websocket: websockets.ServerConnection) -> None:
+    with sentry_sdk.start_transaction(sentry_sdk.continue_trace(websocket.request.headers)):
+        with sentry_sdk.start_span(op="stt", name="STT session") as span:
+            global recognizer
 
-    config_message = json.loads(await websocket.recv())
-    sample_rate = config_message['sample_rate']
-    if sample_rate != base_sample_rate:
-        logging.warning(f"sample rate mismatch, expected {base_sample_rate}, got {sample_rate}")
-        await websocket.close()
-        return
+            config_message = json.loads(await websocket.recv())
+            sample_rate = config_message['sample_rate']
+            if sample_rate != base_sample_rate:
+                logging.warning(f"sample rate mismatch, expected {base_sample_rate}, got {sample_rate}")
+                await websocket.close()
+                return
 
-    vad, window_size = create_vad()
-    buffer = []
-    started = False
-    started_time = None
-    offset = 0
-
-    logging.info("vad created")
-
-    current_time = 0
-
-    overall_buffer = []
-
-    texts = []
-
-    async for message in websocket:
-        if type(message) is str:
-            continue
-
-        samples = np.array(array.array('h', message)) / 32767.0 * INPUT_GAIN
-
-        buffer = np.concatenate([buffer, samples])
-        overall_buffer = np.concatenate([overall_buffer, samples])
-
-        while offset + window_size < len(buffer):
-            vad.accept_waveform(buffer[offset : offset + window_size])
-            if not started and vad.is_speech_detected():
-                logging.info("speech started")
-                started = True
-                started_time = current_time
-            offset += window_size
-
-        if not started:
-            if len(buffer) > 10 * window_size:
-                offset -= len(buffer) - 10 * window_size
-                buffer = buffer[-10 * window_size :]
-
-        if started and current_time - started_time > 1:
-            stream = recognizer.create_stream()
-            stream.accept_waveform(sample_rate, buffer)
-            recognizer.decode_stream(stream)
-            text = stream.result.text.strip()
-            if text:
-                texts.append(text)
-                logging.info(f"recognized text: '{text}'")
-
-                end_of_utt = len(texts) > 3 and texts[-1] == texts[-2] and texts[-2] == texts[-3]
-
-                await websocket.send(json.dumps({
-                    "end_of_utt": end_of_utt,
-                    "text": text
-                }))
-                if end_of_utt:
-                    break
-
-            started_time = current_time
-
-        while not vad.empty():
-            stream = recognizer.create_stream()
-            stream.accept_waveform(sample_rate, vad.front.samples)
-
-            vad.pop()
-            recognizer.decode_stream(stream)
-
-            text = stream.result.text.strip()
-
-            logging.info(f"final recognized text: '{text}'")
-            save_buffer(overall_buffer)
-            await websocket.send(json.dumps({
-                "end_of_utt": True,
-                "text": text
-            }))
+            with sentry_sdk.start_span(op="create-vad", name="VAD creation"):
+                vad, window_size = create_vad()
 
             buffer = []
-            offset = 0
             started = False
             started_time = None
+            offset = 0
 
-            await websocket.close()
-            return
+            logging.info("vad created")
 
-        current_time += len(samples) / base_sample_rate
+            current_time = 0
 
-    save_buffer(overall_buffer)
+            overall_buffer = []
 
+            texts = []
+
+            async for message in websocket:
+                if type(message) is str:
+                    continue
+
+                samples = np.array(array.array('h', message)) / 32767.0 * INPUT_GAIN
+
+                buffer = np.concatenate([buffer, samples])
+                overall_buffer = np.concatenate([overall_buffer, samples])
+
+                while offset + window_size < len(buffer):
+                    vad.accept_waveform(buffer[offset : offset + window_size])
+                    if not started and vad.is_speech_detected():
+                        logging.info("speech started")
+                        started = True
+                        started_time = current_time
+                    offset += window_size
+
+                if not started:
+                    if len(buffer) > 10 * window_size:
+                        offset -= len(buffer) - 10 * window_size
+                        buffer = buffer[-10 * window_size :]
+
+                if started and current_time - started_time > 1:
+                    with sentry_sdk.start_span(op="recognize", name="GigaAM recognizing") as span:
+                        stream = recognizer.create_stream()
+                        stream.accept_waveform(sample_rate, buffer)
+                        recognizer.decode_stream(stream)
+                        text = stream.result.text.strip()
+                        span.set_data("text", text)
+
+                    if text:
+                        texts.append(text)
+                        logging.info(f"recognized text: '{text}'")
+
+                        end_of_utt = len(texts) > 3 and texts[-1] == texts[-2] and texts[-2] == texts[-3]
+
+                        await websocket.send(json.dumps({
+                            "end_of_utt": end_of_utt,
+                            "text": text
+                        }))
+                        if end_of_utt:
+                            break
+
+                    started_time = current_time
+
+                while not vad.empty():
+                    with sentry_sdk.start_span(op="recognize", name="GigaAM recognizing") as span:
+                        stream = recognizer.create_stream()
+                        stream.accept_waveform(sample_rate, vad.front.samples)
+                        recognizer.decode_stream(stream)
+                        vad.pop()
+                        text = stream.result.text.strip()
+                        span.set_data("text", text)
+
+                    logging.info(f"final recognized text: '{text}'")
+                    save_buffer(overall_buffer)
+                    await websocket.send(json.dumps({
+                        "end_of_utt": True,
+                        "text": text
+                    }))
+
+                    buffer = []
+                    offset = 0
+                    started = False
+                    started_time = None
+
+                    await websocket.close()
+                    return
+
+                current_time += len(samples) / base_sample_rate
+
+            save_buffer(overall_buffer)
 
 async def _windows_cancel(stop_event: asyncio.Event) -> None:
     try:
