@@ -85,7 +85,7 @@ def save_buffer(samples) -> None:
 
 
 async def transcribe(websocket: websockets.ServerConnection) -> None:
-    with sentry_sdk.start_transaction(sentry_sdk.continue_trace(websocket.request.headers), op="stt", name="STT session"):
+    with sentry_sdk.start_transaction(sentry_sdk.continue_trace(websocket.request.headers, op="stt", name="STT session")):
         global recognizer
 
         config_message = json.loads(await websocket.recv())
